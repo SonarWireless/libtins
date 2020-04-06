@@ -5,14 +5,14 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright
  *   notice, this list of conditions and the following disclaimer.
  * * Redistributions in binary form must reproduce the above
  *   copyright notice, this list of conditions and the following disclaimer
  *   in the documentation and/or other materials provided with the
  *   distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -43,7 +43,7 @@ class OutputMemoryStream;
 
 } // Memory
 
-/** \cond 
+/** \cond
  * Forward declaration. Avoid header inclusion.
  */
 class RSNInformation;
@@ -60,15 +60,27 @@ public:
      */
     static const PDU::PDUType pdu_flag = PDU::EAPOL;
 
+
     /**
-     * The EAPOL type enum.
+     * the EAPOL packet types enum.
      */
-    enum EAPOLTYPE {
+    enum PacketType
+    {
+        EAP_TYPE = 0,
+        START,
+        LOGOFF,
+        KEY
+    };
+
+    /**
+     * EAPOL key types enum.
+     */
+    enum KeyType {
         RC4 = 1,
         RSN,
         EAPOL_WPA = 254
     };
-    
+
     /**
      * \brief Extracts metadata for this protocol based on the buffer provided
      *
@@ -76,23 +88,38 @@ public:
      * \param total_sz Size of the buffer pointed by buffer
      */
     static metadata extract_metadata(const uint8_t *buffer, uint32_t total_sz);
-    
+
+
     /**
-     * \brief Static method to instantiate the correct EAPOL subclass 
+     * \brief constructor that sets the packet_type field.
+     *
+     * \param packet_type the eapol packet type
+     */
+    EAPOL(PacketType packet_type);
+
+    /**
+     * \brief Constructor which creates an EAPOL object from a buffer.
+     * \param buffer The buffer from which this PDU will be constructed.
+     * \param total_sz The total size of the buffer.
+     */
+    EAPOL(const uint8_t* buffer, uint32_t total_sz);
+
+    /**
+     * \brief Static method to instantiate the correct EAPOL subclass
      * based on a raw buffer.
-     * 
+     *
      * If no valid EAPOL type is detected, a null pointer is returned.
-     * 
+     *
      * \sa RC4EAPOL
      * \sa RSNEAPOL
-     * 
+     *
      * \param buffer The buffer from which the data will be taken.
      * \param total_sz The total size of the buffer.
      */
     static EAPOL* from_bytes(const uint8_t* buffer, uint32_t total_sz);
-    
+
     /* Getters */
-    
+
     /**
      * \brief Getter for the version field.
      * \return The version field.
@@ -100,7 +127,7 @@ public:
     uint8_t version() const {
         return header_.version;
     }
-    
+
     /**
      * \brief Getter for the packet type field.
      * \return The packet type field.
@@ -108,7 +135,7 @@ public:
     uint8_t packet_type() const {
         return header_.packet_type;
     }
-    
+
     /**
      * \brief Getter for the length field.
      * \return The length field.
@@ -116,81 +143,269 @@ public:
     uint16_t length() const {
         return Endian::be_to_host(header_.length);
     }
-    
-    /**
-     * \brief Getter for the type field.
-     * \return The type field.
-     */
-    uint8_t type() const {
-        return header_.type;
-    }
-    
+
     /* Setters */
-    
+
     /**
      * \brief Sets the version field.
      * \param value The new version to be set.
      */
     void version(uint8_t value);
-    
+
     /**
      * \brief Sets the packet type field.
      * \param value The new packet type to be set.
      */
     void packet_type(uint8_t value);
-    
+
     /**
      * \brief Sets the length field.
      * \param value The new length to be set.
      */
-    void length(uint16_t value);
-    
+    virtual void length(uint16_t value);
+
     /**
-     * \brief Sets the type field.
-     * \param value The new type to be set.
+     * \brief Returns the header size.
+     *
+     * This method overrides PDU::header_size. This size includes the
+     * payload and options size.
+     *
+     * \sa PDU::header_size
      */
-    void type(uint8_t value);
-    
+    uint32_t header_size() const;
+
     /**
      * \brief Getter for the PDU's type.
      * \return Returns the PDUType corresponding to the PDU.
      */
     PDUType pdu_type() const { return PDU::EAPOL; }
+
+
+    /**
+     * \brief Clones this PDU.
+     *
+     * \sa PDU::clone
+     */
+    EAPOL* clone() const {
+        return new EAPOL(*this);
+    }
 protected:
-    /**
-     * \brief Protected constructor that sets the packet_type and type fields.
-     */
-    EAPOL(uint8_t packet_type, EAPOLTYPE type);
-    
-    /**
-     * \brief Constructor which creates an EAPOL object from a buffer.
-     * \param buffer The buffer from which this PDU will be constructed.
-     * \param total_sz The total size of the buffer.
-     */
-    EAPOL(const uint8_t* buffer, uint32_t total_sz);
-    
     TINS_BEGIN_PACK
     struct eapol_header {
         uint8_t version, packet_type;
         uint16_t length;
-        uint8_t type;
     } TINS_END_PACK;
-    
+
+    TINS_BEGIN_PACK
+    struct overlapping_eapol_header {
+        uint8_t version, packet_type;
+        uint16_t length;
+        uint8_t subtype_code;
+    } TINS_END_PACK;
+
+private:
+
     /**
      * \brief Virtual method which should serialize the subclass specific
      * body and save it in a byte array.
-     * 
+     *
      * \param buffer The pointer in which to save the serialization.
      * \param total_sz The total size of the buffer.
      */
-    virtual void write_body(Memory::OutputMemoryStream& stream) = 0;
-private:
+    virtual void write_body(Memory::OutputMemoryStream&);
+
     void write_serialization(uint8_t* buffer, uint32_t total_sz);
 
     eapol_header header_;
 };
 
+class TINS_API Eap : public EAPOL {
+public:
+    static const PDU::PDUType pdu_flag = PDU::EAP;
 
+    /**
+     * A number to signify 'no value' for type
+     */
+    static const uint8_t invalid_type = 255;
+
+    /**
+     * EAP types enum.
+     */
+    enum Codes {
+        REQUEST = 1,
+        RESPONSE,
+        SUCCESS,
+        FAILURE
+    };
+
+    /**
+     * \brief Default constructor.
+     */
+    Eap();
+
+    /**
+     * \brief constructor that sets the code field (id is 0, type is Eap::invalid_type)
+     *
+     * \param eap_code the eap type code
+     */
+    Eap(Codes eap_code);
+
+    /**
+     * \brief constructor that sets the code and id fields. (type is Eap::invalid_type)
+     *
+     * \param eap_code the eap type code
+     * \param id the packet id
+     */
+    Eap(Codes eap_code, uint8_t id);
+
+    /**
+     * \brief constructor that sets the code,id and and type fields.
+     *
+     * \param eap_code the eap type code
+     * \param id the packet id
+     * \param eap_type the type of the eap payload (if there is any)
+     */
+    Eap(Codes eap_code, uint8_t id, uint8_t eap_type);
+
+    /**
+     * \brief Constructs an Eap object from a buffer.
+     *
+     * If there is not enough size for a EAP header in the
+     * buffer, a malformed_packet exception is thrown.
+     *
+     * \param buffer The buffer from which this PDU will be constructed.
+     * \param total_sz The total size of the buffer.
+     */
+    Eap(const uint8_t* buffer, uint32_t total_sz);
+
+    /* Getters */
+
+    /**
+     * \brief Getter for the length field.
+     * \return The length field.
+     */
+    uint16_t length() const {
+        return Endian::be_to_host(eap_header_.length);
+    }
+
+    /**
+     * \brief Getter for the code field.
+     * \return The code field.
+     */
+    Codes code() const {
+        return static_cast<Codes>(eap_header_.code);
+    }
+
+    /**
+     * \brief Getter for the id field.
+     * \return The id field.
+     */
+    uint8_t id() const {
+        return eap_header_.id;
+    }
+
+    /**
+     * \brief Getter for the type field.
+     * \return The type field.
+     */
+    uint8_t type() const {
+        if(eap_header_.type == invalid_type) {
+            throw option_not_found();
+        }
+        return eap_header_.type;
+    }
+    /* Setters */
+
+    /**
+     * \brief Sets the key length field.
+     * \param new_length The new key length to be set.
+     */
+    virtual void length(uint16_t new_length);
+
+    /**
+     * \brief Sets the code field.
+     * \param new_code The new code to be set.
+     */
+    void code(Codes new_code);
+
+    /**
+     * \brief Sets the id field.
+     * \param new_id The new id to be set.
+     */
+    void id(uint8_t new_id);
+
+    /**
+     * \brief Sets the type field.
+     * \param new_type The new type to be set.
+     */
+    void type(uint8_t new_type);
+
+    /* Virtual method override. */
+
+    /**
+     * \brief Returns the header size.
+     *
+     * This method overrides PDU::header_size. This size includes the
+     * payload and options size.
+     *
+     * \sa PDU::header_size
+     */
+    uint32_t header_size() const;
+
+    /**
+     * \brief Getter for the PDU's type.
+     * \return Returns the PDUType corresponding to the PDU.
+     */
+    PDUType pdu_type() const {
+        return pdu_flag;
+    }
+
+    /**
+     * \brief Check whether this PDU matches the specified flag.
+     * \param flag The flag to match
+     * \sa PDU::matches_flag
+     */
+    bool matches_flag(PDUType flag) const {
+       return flag == pdu_flag || EAPOL::matches_flag(flag);
+    }
+
+    /**
+     * \brief Clones this PDU.
+     *
+     * \sa PDU::clone
+     */
+    Eap* clone() const {
+        return new Eap(*this);
+    }
+
+private:
+
+    /*
+     * \brief common header in all eap types
+     */
+    TINS_BEGIN_PACK
+    struct eap_header {
+        uint8_t code, id;
+        uint16_t length;
+    } TINS_END_PACK;
+
+    /*
+     * \brief header when code is Codes::REQUEST, Codes::RESPONSE, otherwise type is Eap::invalid_type
+     */
+    TINS_BEGIN_PACK
+    struct extended_eap_header {
+        uint8_t code, id;
+        uint16_t length;
+        uint8_t type;
+    } TINS_END_PACK;
+
+    void write_body(Memory::OutputMemoryStream& stream);
+
+    void init(Codes eap_code, uint8_t id, uint8_t eap_type);
+
+    extended_eap_header eap_header_;
+
+};
 
 /**
  * \brief Class that represents the RC4 EAPOL PDU.
@@ -206,12 +421,12 @@ public:
      * This PDU's flag.
      */
     static const PDU::PDUType pdu_flag = PDU::RC4EAPOL;
-    
+
     /**
      * The length of the key IV field
      */
     static const size_t key_iv_size = 16;
-    
+
     /**
      * The length of the key sign field
      */
@@ -221,20 +436,28 @@ public:
      * \brief Default constructor.
      */
     RC4EAPOL();
-    
+
     /**
      * \brief Constructs a RC4EAPOL object from a buffer.
-     * 
-     * If there is not enough size for a RC4EAPOL header in the 
+     *
+     * If there is not enough size for a RC4EAPOL header in the
      * buffer, a malformed_packet exception is thrown.
-     * 
+     *
      * \param buffer The buffer from which this PDU will be constructed.
      * \param total_sz The total size of the buffer.
      */
     RC4EAPOL(const uint8_t* buffer, uint32_t total_sz);
-    
+
     /* Getters */
-    
+
+    /**
+     * \brief Getter for the type field.
+     * \return The type field.
+     */
+    uint8_t type() const {
+        return header_.type;
+    }
+
     /**
      * \brief Getter for the key length field.
      * \return The key length field.
@@ -242,7 +465,7 @@ public:
     uint16_t key_length() const {
         return Endian::be_to_host(header_.key_length);
     }
-    
+
     /**
      * \brief Getter for the replay counter field.
      * \return The replay counter field.
@@ -250,7 +473,7 @@ public:
     uint64_t replay_counter() const {
         return Endian::be_to_host(header_.replay_counter);
     }
-    
+
     /**
      * \brief Getter for the key IV field.
      * \return The key IV field.
@@ -258,7 +481,7 @@ public:
     const uint8_t* key_iv() const {
         return header_.key_iv;
     }
-    
+
     /**
      * \brief Getter for the key flag field.
      * \return The key flag field.
@@ -266,7 +489,7 @@ public:
     small_uint<1> key_flag() const {
         return header_.key_flag;
     }
-    
+
     /**
      * \brief Getter for the key index field.
      * \return The key index field.
@@ -274,7 +497,7 @@ public:
     small_uint<7> key_index() const {
         return header_.key_index;
     }
-    
+
     /**
      * \brief Getter for the key signature field.
      * \return The key signature field.
@@ -282,7 +505,7 @@ public:
     const uint8_t* key_sign() const {
         return header_.key_sign;
     }
-    
+
     /**
      * \brief Getter for the key field.
      * \return The key field.
@@ -290,53 +513,59 @@ public:
     const key_type& key() const {
         return key_;
     }
-    
+
     /* Setters */
-    
+
+    /**
+     * \brief Sets the type field.
+     * \param value The new type to be set.
+     */
+    void type(uint8_t value);
+
     /**
      * \brief Sets the key length field.
      * \param value The new key length to be set.
      */
     void key_length(uint16_t value);
-    
+
     /**
      * \brief Sets the replay counter field.
      * \param value The new replay counter to be set.
      */
     void replay_counter(uint64_t value);
-    
+
     /**
      * \brief Sets the key IV field.
      * \param value The new key IV to be set.
      */
     void key_iv(const uint8_t* value);
-    
+
     /**
      * \brief Sets the key flag field.
      * \param value The new key flag to be set.
      */
     void key_flag(small_uint<1> value);
-    
+
     /**
      * \brief Sets the key index field.
      * \param value The new key index to be set.
      */
     void key_index(small_uint<7> value);
-    
+
     /**
      * \brief Sets the key signature field.
      * \param value The new key signature to be set.
      */
     void key_sign(const uint8_t* value);
-    
+
     /**
      * \brief Sets the key field.
      * \param value The new key to be set.
      */
     void key(const key_type& value);
-    
+
     /* Virtual method override. */
-    
+
     /**
      * \brief Returns the header size.
      *
@@ -346,15 +575,15 @@ public:
      * \sa PDU::header_size
      */
     uint32_t header_size() const;
-    
+
     /**
      * \brief Getter for the PDU's type.
      * \return Returns the PDUType corresponding to the PDU.
      */
     PDUType pdu_type() const {
-        return pdu_flag; 
+        return pdu_flag;
     }
-    
+
     /**
      * \brief Check whether this PDU matches the specified flag.
      * \param flag The flag to match
@@ -363,10 +592,10 @@ public:
     bool matches_flag(PDUType flag) const {
        return flag == pdu_flag || EAPOL::matches_flag(flag);
     }
-    
+
     /**
      * \brief Clones this PDU.
-     * 
+     *
      * \sa PDU::clone
      */
     RC4EAPOL* clone() const {
@@ -375,6 +604,7 @@ public:
 private:
     TINS_BEGIN_PACK
     struct rc4_eapol_header {
+        uint8_t type;
         uint16_t key_length;
         uint64_t replay_counter;
         uint8_t key_iv[key_iv_size];
@@ -382,14 +612,13 @@ private:
                 key_flag:1;
         uint8_t key_sign[16];
     } TINS_END_PACK;
-    
+
     void write_body(Memory::OutputMemoryStream& stream);
-    
-    
+
+
     key_type key_;
     rc4_eapol_header header_;
 };
-
 
 /**
  * \brief Class that represents the RSN EAPOL PDU.
@@ -405,12 +634,12 @@ public:
      * \brief This PDU's flag.
      */
     static const PDU::PDUType pdu_flag = PDU::RSNEAPOL;
-    
+
     /**
      * The length of the key IV field
      */
     static const size_t key_iv_size = 16;
-    
+
     /**
      * The length of the nonce field
      */
@@ -420,35 +649,43 @@ public:
      * The length of the mic field
      */
     static const size_t mic_size = 16;
-    
+
     /**
      * The length of the rsc field
      */
     static const size_t rsc_size = 8;
-    
+
     /**
      * The length of the id field
      */
     static const size_t id_size = 8;
-    
+
     /**
      * \brief Creates an instance of RSNEAPOL.
      */
     RSNEAPOL();
-    
+
     /**
      * \brief Constructs a RSNEAPOL object from a buffer.
-     * 
+     *
      * If there is not enough size for the RSNEAPOL header, a
      * malformed_packet exception is thrown.
-     * 
+     *
      * \param buffer The buffer from which this PDU will be constructed.
      * \param total_sz The total size of the buffer.
      */
     RSNEAPOL(const uint8_t* buffer, uint32_t total_sz);
-    
+
     /* Getters */
-    
+
+    /**
+     * \brief Getter for the type field.
+     * \return The type field.
+     */
+    uint8_t type() const {
+        return header_.type;
+    }
+
     /**
      * \brief Getter for the key length field.
      * \return The key length field.
@@ -456,7 +693,7 @@ public:
     uint16_t key_length() const {
         return Endian::be_to_host(header_.key_length);
     }
-    
+
     /**
      * \brief Getter for the replay counter field.
      * \return The replay counter field.
@@ -464,7 +701,7 @@ public:
     uint64_t replay_counter() const {
         return Endian::be_to_host(header_.replay_counter);
     }
-    
+
     /**
      * \brief Getter for the key IV field.
      * \return The key IV field.
@@ -472,7 +709,7 @@ public:
     const uint8_t* key_iv() const {
         return header_.key_iv;
     }
-    
+
     /**
      * \brief Getter for the nonce field.
      * \return The nonce field.
@@ -480,7 +717,7 @@ public:
     const uint8_t* nonce() const {
         return header_.nonce;
     }
-    
+
     /**
      * \brief Getter for the rsc field.
      * \return The rsc field.
@@ -488,7 +725,7 @@ public:
     const uint8_t* rsc() const {
         return header_.rsc;
     }
-    
+
     /**
      * \brief Getter for the id field.
      * \return The id field.
@@ -496,7 +733,7 @@ public:
     const uint8_t* id() const {
         return header_.id;
     }
-    
+
     /**
      * \brief Getter for the mic field.
      * \return The mic field.
@@ -504,7 +741,7 @@ public:
     const uint8_t* mic() const {
         return header_.mic;
     }
-    
+
     /**
      * \brief Getter for the wpa length field.
      * \return The wpa length field.
@@ -512,7 +749,7 @@ public:
     uint16_t wpa_length() const {
         return Endian::be_to_host(header_.wpa_length);
     }
-    
+
     /**
      * \brief Getter for the key field.
      * \return The key field.
@@ -520,7 +757,7 @@ public:
     const key_type& key() const {
         return key_;
     }
-    
+
     /**
      * \brief Getter for the key mic field.
      * \return 1 if this EAPOL PDU contains a valid MIC, 0 otherwise.
@@ -571,7 +808,7 @@ public:
 
     /**
      * \brief Getter for the key type field.
-     * 
+     *
      * \return 1 if this is a pairwise key, 0 otherwise.
      */
     small_uint<1> key_t() const {
@@ -601,7 +838,7 @@ public:
     small_uint<1> key_ack() const {
         return header_.key_ack;
     }
-    
+
     /**
      * \brief Returns the header size.
      *
@@ -611,21 +848,27 @@ public:
      * \sa PDU::header_size
      */
     uint32_t header_size() const;
-    
+
     /* Setters */
-    
+
+    /**
+     * \brief Sets the type field.
+     * \param value The new type to be set.
+     */
+    void type(uint8_t value);
+
     /**
      * \brief Sets the key length field.
      * \param value The new key length to be set.
      */
     void key_length(uint16_t value);
-    
+
     /**
      * \brief Sets the replay counter field.
      * \param value The new replay counter to be set.
      */
     void replay_counter(uint64_t value);
-    
+
     /**
      * \brief Sets the key IV field.
      *
@@ -635,17 +878,17 @@ public:
      * \param ptr The new key IV to be set.
      */
     void key_iv(const uint8_t* ptr);
-    
+
     /**
      * \brief Sets the nonce field.
-     * 
+     *
      * The pointer has to contain at least nonce_size bytes. The pointer's contents
      * will be copied.
      *
      * \param ptr The new nonce to be set.
      */
     void nonce(const uint8_t* ptr);
-    
+
     /**
      * \brief Sets the rsc field.
      *
@@ -655,7 +898,7 @@ public:
      * \param ptr The new rsc to be set.
      */
     void rsc(const uint8_t* ptr);
-    
+
     /**
      * \brief Sets the id field.
      *
@@ -665,29 +908,29 @@ public:
      * \param ptr The new id to be set.
      */
     void id(const uint8_t* ptr);
-    
+
     /**
      * \brief Sets the mic field.
-     * 
+     *
      * The pointer has to contain at least mic_size bytes. The pointer's contents
      * will be copied.
      *
      * \param ptr The new mic to be set.
      */
     void mic(const uint8_t* ptr);
-    
+
     /**
      * \brief Sets the wpa length field.
      * \param length The new wpa length to be set.
      */
     void wpa_length(uint16_t length);
-    
+
     /**
      * \brief Sets the key field.
      * \param value The new key to be set.
      */
     void key(const key_type& value);
-    
+
     /**
      * \brief Setter for the key_mic field.
      * \param value The new to be set.
@@ -747,7 +990,7 @@ public:
      * \param flag The new to be set.
      */
     void key_ack(small_uint<1> flag);
-    
+
     /**
      * \brief Getter for the PDU's type.
      * \return Returns the PDUType corresponding to the PDU.
@@ -755,7 +998,7 @@ public:
     PDUType pdu_type() const {
         return pdu_flag;
     }
-    
+
     /**
      * \brief Check whether this PDU matches the specified flag.
      * \param flag The flag to match
@@ -764,10 +1007,10 @@ public:
     bool matches_flag(PDUType flag) const {
        return flag == pdu_flag || EAPOL::matches_flag(flag);
     }
-    
+
     /**
      * \brief Clones this PDU.
-     * 
+     *
      * \sa PDU::clone
      */
     RSNEAPOL* clone() const {
@@ -776,18 +1019,19 @@ public:
 private:
     TINS_BEGIN_PACK
     struct rsn_eapol_header {
+        uint8_t type;
     #if TINS_IS_LITTLE_ENDIAN
         uint16_t key_mic:1,
             secure:1,
             error:1,
             request:1,
             encrypted:1,
-            reserved:3, 
+            reserved:3,
             key_descriptor:3,
             key_t:1,
             key_index:2,
             install:1,
-            key_ack:1;       
+            key_ack:1;
         uint16_t key_length;
         uint64_t replay_counter;
         uint8_t nonce[nonce_size], key_iv[key_iv_size];
@@ -814,10 +1058,10 @@ private:
         uint16_t wpa_length;
     #endif
     } TINS_END_PACK;
-    
+
     void write_body(Memory::OutputMemoryStream& stream);
-    
-    
+
+
     rsn_eapol_header header_;
     key_type key_;
 };
